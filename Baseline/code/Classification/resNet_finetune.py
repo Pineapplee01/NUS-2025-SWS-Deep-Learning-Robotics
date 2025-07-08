@@ -1,0 +1,102 @@
+import os
+import torch
+from torchvision import models, datasets, transforms
+from torch.utils.data import DataLoader
+import torch.nn as nn
+
+# 定义数据路径
+train_dir = r'G:\NUS\DLCourse\BaseLine\data\dataset\sample_cats\train'
+val_dir = r'G:\NUS\DLCourse\BaseLine\data\dataset\sample_cats\validation'
+
+
+# 定义数据预处理
+transform = transforms.Compose([
+    transforms.Resize((224, 224)),
+    transforms.RandomHorizontalFlip(),
+    transforms.RandomRotation(15),
+    transforms.ColorJitter(brightness=0.2, contrast=0.2, saturation=0.2, hue=0.1),
+    transforms.RandomResizedCrop(224, scale=(0.8, 1.0)),
+    transforms.ToTensor(),
+])
+
+# 加载数据集
+train_dataset = datasets.ImageFolder(train_dir, transform=transform)
+val_dataset = datasets.ImageFolder(val_dir, transform=transform)
+
+train_loader = DataLoader(train_dataset, batch_size=32, shuffle=True, num_workers=2)
+val_loader = DataLoader(val_dataset, batch_size=32, shuffle=False, num_workers=2)
+
+# 定义 ResNet 模型
+num_classes = len(train_dataset.classes)  # 自动获取类别数量
+model = models.resnet18(weights=models.ResNet18_Weights.DEFAULT)
+model.fc = nn.Sequential(
+    nn.Dropout(0.5),
+    nn.Linear(model.fc.in_features, num_classes)
+)
+model = model.to('cuda' if torch.cuda.is_available() else 'cpu')
+
+# 定义损失函数和优化器
+criterion = nn.CrossEntropyLoss()
+optimizer = torch.optim.Adam(model.parameters(), lr=1e-3, weight_decay=1e-4)
+scheduler = torch.optim.lr_scheduler.StepLR(optimizer, step_size=5, gamma=0.1)
+
+# 训练函数
+def train_model(model, train_loader, val_loader, epochs=10):
+    device = next(model.parameters()).device
+    best_acc = 0
+
+    # 创建保存目录
+    save_dir = r'G:\NUS\DLCourse\BaseLine\code\Classification\checkpoints'
+    os.makedirs(save_dir, exist_ok=True)
+
+    for epoch in range(epochs):
+        model.train()
+        train_loss, correct = 0, 0
+        for images, labels in train_loader:
+            images, labels = images.to(device), labels.to(device)
+
+            # 前向传播
+            outputs = model(images)
+            loss = criterion(outputs, labels)
+
+            # 反向传播
+            optimizer.zero_grad()
+            loss.backward()
+            optimizer.step()
+
+            train_loss += loss.item() * images.size(0)
+            _, preds = torch.max(outputs, 1)
+            correct += (preds == labels).sum().item()
+
+        train_loss /= len(train_loader.dataset)
+        train_acc = correct / len(train_loader.dataset)
+
+        # 验证
+        model.eval()
+        val_loss, correct = 0, 0
+        with torch.no_grad():
+            for images, labels in val_loader:
+                images, labels = images.to(device), labels.to(device)
+                outputs = model(images)
+                loss = criterion(outputs, labels)
+                val_loss += loss.item() * images.size(0)
+                _, preds = torch.max(outputs, 1)
+                correct += (preds == labels).sum().item()
+        val_loss /= len(val_loader.dataset)
+        val_acc = correct / len(val_loader.dataset)
+
+        print(f'Epoch [{epoch+1}/{epochs}], Train Loss: {train_loss:.4f}, Train Acc: {train_acc:.4f}, Val Loss: {val_loss:.4f}, Val Acc: {val_acc:.4f}')
+
+        # 保存模型
+        torch.save(model.state_dict(), os.path.join(save_dir, f'ResNet_epoch_{epoch+1}.pth'))
+
+        # 保存验证集准确率最高的模型
+        if val_acc > best_acc:
+            best_acc = val_acc
+            torch.save(model.state_dict(), os.path.join(save_dir, 'best_resnet.pth'))
+
+        # 更新学习率
+        scheduler.step()
+
+if __name__ == '__main__':
+    train_model(model, train_loader, val_loader, epochs=20)
