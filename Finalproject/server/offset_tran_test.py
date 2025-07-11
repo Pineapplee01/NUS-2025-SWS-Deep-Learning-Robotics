@@ -1,5 +1,7 @@
 import socket
 
+#This code is a test for the transmission of CSV commands received from the object detection model to the Pi
+
 #offset transmit
 Pi_UDP_IP = "172.20.10.12"
 OFFSET_PORT = 8888
