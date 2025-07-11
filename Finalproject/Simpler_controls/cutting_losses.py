@@ -48,11 +48,11 @@ while True:
 
         print(f"offset: {offset}, box_width: {box_width}, box_height: {box_height}")
 
-        ser.flush() 
+        # ser.flush() -- remove, causes the USB connection to be dropped due to repeated re-sync of drivers
 
-        if offset > 20:
+        if offset > 35:
             cmd = 'D'
-        elif offset < -20:
+        elif offset < -35:
             cmd = 'A'
         elif box_width < max_width and box_height < 0.65 * max_height:
             cmd = 'W'
