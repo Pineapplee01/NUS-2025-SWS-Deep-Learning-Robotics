@@ -17,7 +17,7 @@ int cameraAngle = 0;
 
 // === Motors ===
 #define DRIVE_SPEED 230
-#define TURN_SPEED 180
+#define TURN_SPEED 100
 
 AF_DCMotor motor1(1);
 AF_DCMotor motor2(2);
