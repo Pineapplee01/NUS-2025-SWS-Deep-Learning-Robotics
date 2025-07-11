@@ -1,0 +1,51 @@
+"""
+  We decided to have 2 flask apps running parallel and rendering to 2 js pages because a single flask thread always prioritized 
+  camera events and feed over executing commands, which led to a latency of 20 seconds for the execution of motion.
+  Simply forwards the key press forwarded by the site onto arduino. Inefficient, yeah.
+"""  
+
+# motor_server.py
+import serial
+from flask_socketio import SocketIO
+from flask import Flask
+import eventlet
+
+eventlet.monkey_patch()
+try:
+    ser = serial.Serial('/dev/ttyACM1', 115200, timeout=0.0001)
+    print("Serial connection established")
+except Exception as e:
+    print(f"Serial connection failed: {e}")
+    ser = None
+
+app = Flask(__name__)
+socketio = SocketIO(app, cors_allowed_origins="*", async_mode ='eventlet')
+
+@app.route('/')
+def serve_index():
+    return send_from_directory('.', 'index3.html')
+
+@socketio.on('connect')
+def handle_connect():
+    print('Client connected')
+
+@socketio.on('disconnect')
+def handle_disconnect():
+    print('Client disconnected')
+
+@socketio.on('control')
+def handle_control(data):
+    command = data.get('command', '').upper().strip()
+    #if not command or ser is None:
+     #   return
+    try:
+        ser.flushInput()
+        ser.write((command + '\n').encode())
+        
+        print(f"Sent command: {command}")
+    except Exception as e:
+        print(f"Error sending command: {e}")
+
+if __name__ == '__main__':
+    print('Starting Motor SocketIO server...')
+    socketio.run(app, host='0.0.0.0', port=5001)
