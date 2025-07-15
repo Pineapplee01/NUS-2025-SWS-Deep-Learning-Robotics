@@ -4,8 +4,9 @@
   The previous code had a useless LCD attached that increased the command processing latency to 30 seconds because of lcd.print
 
   The camera needs to ping and send details once every 30 frames only, otherwise the hardware gets overwhelmed with the barrage of commands and we make no progress.
+  Now includes an auto clamp feature that clamps on an object when it is in range of the claw (after a delay of 1s)
 
-  Added auto clamp when distance between (0, 6] cm
+
   ======================= The PID needs to be tuned more before it's usable, it's speed corrections are horrendous rn =======================
 */
 #include <AFMotor.h>
@@ -80,6 +81,7 @@ void loop() {
     Serial.print("Object close! Distance: ");
     Serial.print(distance);
     Serial.println(" cm -> Clamping!");
+    delay(1000);
 
     clamp();
   }
@@ -126,16 +128,14 @@ void handleCommand(char cmd) {
       break;
 
     case 'U': // Camera Tilt Up
-      cameraAngle += 30;
-      if (cameraAngle > 180) cameraAngle = 180; // Constrain angle
-      cameraServo.write(cameraAngle);
+      clamp();
+      cameraAngle+=30;
       Serial.print("Camera angle: "); Serial.println(cameraAngle);
       break;
 
     case 'N': // Camera Tilt Down
-      cameraAngle -= 30;
-      if (cameraAngle < 0) cameraAngle = 0; // Constrain angle
-      cameraServo.write(cameraAngle);
+      unclamp();
+      cameraAngle+30;
       Serial.print("Camera angle: "); Serial.println(cameraAngle);
       break;  
   }
@@ -206,13 +206,13 @@ float readDistanceCM() {
 }
 
 void clamp() {
-  cameraServo.write(90); // Adjust angle to match your claw closed position
+  cameraServo.write(120); 
   clamped = true;
-  Serial.println("Clamped!");
+  Serial.println("Clamped");
 }
 
 void unclamp() {
-  cameraServo.write(0); // Adjust angle to match your claw open position
+  cameraServo.write(170); // Adjust angle to match your claw open position
   clamped = false;
-  Serial.println("Unclamped!");
+  Serial.println("Unclamped");
 }
