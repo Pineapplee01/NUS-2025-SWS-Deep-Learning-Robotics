@@ -5,6 +5,8 @@
 
   The camera needs to ping and send details once every 30 frames only, otherwise the hardware gets overwhelmed with the barrage of commands and we make no progress.
   Now includes an auto clamp feature that clamps on an object when it is in range of the claw (after a delay of 1s)
+
+
   ======================= The PID needs to be tuned more before it's usable, it's speed corrections are horrendous rn =======================
 */
 #include <AFMotor.h>
@@ -13,7 +15,7 @@
 
 Servo cameraServo;
 
-// Initial angles for servos -- pls forgive the naming scheme i was using the servos for a rotating camera before
+// Initial angles for clamp servos -- pls forgive the naming scheme i was using the servos for a rotating camera before
 int cameraAngle = 0;
 
 // === Motors ===
@@ -75,11 +77,10 @@ void loop() {
   // === Ultrasonic check -- will try to overide later ===
   float distance = readDistanceCM();
 
-  if (distance > 0 && distance <= 5.0 && !clamped) {
+  if (distance > 0 && distance <= 6.0 && !clamped) {
     Serial.print("Object close! Distance: ");
     Serial.print(distance);
     Serial.println(" cm -> Clamping!");
-
     delay(1000);
 
     clamp();
