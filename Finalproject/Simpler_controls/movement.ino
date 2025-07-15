@@ -4,11 +4,12 @@
   The previous code had a useless LCD attached that increased the command processing latency to 30 seconds because of lcd.print
 
   The camera needs to ping and send details once every 30 frames only, otherwise the hardware gets overwhelmed with the barrage of commands and we make no progress.
-
+  Now includes an auto clamp feature that clamps on an object when it is in range of the claw (after a delay of 1s)
   ======================= The PID needs to be tuned more before it's usable, it's speed corrections are horrendous rn =======================
 */
 #include <AFMotor.h>
 #include <Servo.h>
+#include <NewPing.h>
 
 Servo cameraServo;
 
@@ -23,6 +24,13 @@ AF_DCMotor motor1(1);
 AF_DCMotor motor2(2);
 AF_DCMotor motor3(3);
 AF_DCMotor motor4(4);
+
+// === Ultrasonic ===
+#define TRIG_PIN 22
+#define ECHO_PIN 23
+
+// === Clamping State ===
+bool clamped = false;
 
 // === State ===
 bool driving = false;
@@ -39,6 +47,13 @@ void setup() {
   stopMotors();
   cameraServo.attach(46); //  servo connected to pin 46, pin 44 isn't working, 45 is spotty at best...
   cameraServo.write(cameraAngle);
+
+  unclamp();
+
+  pinMode(TRIG_PIN, OUTPUT);
+  pinMode(ECHO_PIN, INPUT);
+
+  Serial.println("Bang-bang + ultrasonic ready!");
 }
 
 void loop() {
@@ -55,6 +70,19 @@ void loop() {
     applyDrive();
   } else {
     stopMotors();
+  }
+
+  // === Ultrasonic check -- will try to overide later ===
+  float distance = readDistanceCM();
+
+  if (distance > 0 && distance <= 5.0 && !clamped) {
+    Serial.print("Object close! Distance: ");
+    Serial.print(distance);
+    Serial.println(" cm -> Clamping!");
+
+    delay(1000);
+
+    clamp();
   }
 
   if (millis() - lastCommandTime > COMMAND_TIMEOUT) {
@@ -99,16 +127,14 @@ void handleCommand(char cmd) {
       break;
 
     case 'U': // Camera Tilt Up
-      cameraAngle += 30;
-      if (cameraAngle > 180) cameraAngle = 180; // Constrain angle
-      cameraServo.write(cameraAngle);
+      clamp();
+      cameraAngle+=30;
       Serial.print("Camera angle: "); Serial.println(cameraAngle);
       break;
 
     case 'N': // Camera Tilt Down
-      cameraAngle -= 30;
-      if (cameraAngle < 0) cameraAngle = 0; // Constrain angle
-      cameraServo.write(cameraAngle);
+      unclamp();
+      cameraAngle+30;
       Serial.print("Camera angle: "); Serial.println(cameraAngle);
       break;  
   }
@@ -161,4 +187,31 @@ void stopMotors() {
   motor2.run(RELEASE);
   motor3.run(RELEASE);
   motor4.run(RELEASE);
+}
+
+float readDistanceCM() {
+  digitalWrite(TRIG_PIN, LOW);
+  delayMicroseconds(2);
+  digitalWrite(TRIG_PIN, HIGH);
+  delayMicroseconds(10);
+  digitalWrite(TRIG_PIN, LOW);
+
+  long duration = pulseIn(ECHO_PIN, HIGH, 20000); // 20 ms timeout
+
+  if (duration == 0) return -1;
+
+  float distance = duration * 0.0343 / 2.0;
+  return distance;
+}
+
+void clamp() {
+  cameraServo.write(120); 
+  clamped = true;
+  Serial.println("Clamped");
+}
+
+void unclamp() {
+  cameraServo.write(170); // Adjust angle to match your claw open position
+  clamped = false;
+  Serial.println("Unclamped");
 }
