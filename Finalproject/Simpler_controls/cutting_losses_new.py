@@ -47,9 +47,9 @@ while trig_object:
             last_cmd = 'X'
             trig_object = False
             trig_human = True
-        elif offset > 30:
+        elif offset > 25:
             last_cmd = 'D'
-        elif offset < -30:
+        elif offset < -25:
             last_cmd = 'A'
         else:
             last_cmd = 'W'
