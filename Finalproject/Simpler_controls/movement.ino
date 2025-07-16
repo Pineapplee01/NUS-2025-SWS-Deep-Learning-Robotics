@@ -3,9 +3,10 @@
   The command handling has been kept pretty simple for testing purposes to get down the transmission and systems integration
   The previous code had a useless LCD attached that increased the command processing latency to 30 seconds because of lcd.print
 
+  Created a separate 'timeout' for the turns because it turned too fast while using a common command timeout
+  Added debug comments and functionality to toggle them on and off
+  Autoclamp is handled by arduino and clamps when the object is within the range of the claw
   The camera needs to ping and send details once every 30 frames only, otherwise the hardware gets overwhelmed with the barrage of commands and we make no progress.
-  Now includes an autoclamp feature and tries to reduce speed?
-  There is a latency in what the camera feeds and how much the motors react to it. Will fix the amount of time the motors fire.
 
   ======================= The PID needs to be tuned more before it's usable, it's speed corrections are horrendous rn =======================
 */
@@ -22,10 +23,18 @@ Servo cameraServo;
 int cameraAngle = 0;
 
 // === Motors ===
-int DRIVE_SPEED = 230;
-const int MIN_SPEED = 100; // Minimum speed to avoid stalling
+int DRIVE_SPEED_MAX = 170;
+int DRIVE_SPEED_MID = 150;
+int DRIVE_SPEED_MIN = 100;
+int DRIVE_SPEED = DRIVE_SPEED_MAX;
 const int MAX_SPEED = 230;
-#define TURN_SPEED 127
+int TURN_SPEED1 = 124;
+int TURN_SPEED0 = 118;
+
+// === A timeout for turning ===
+unsigned long turnStartTime = 0;
+unsigned long turnDuration = 200;  // ms
+
 
 AF_DCMotor motor1(1);
 AF_DCMotor motor2(2);
@@ -91,12 +100,26 @@ void loop() {
       Serial.print(" | Smoothed: "); Serial.println(smoothedDistance);
     }
 
-    if (smoothedDistance <= 30.0 && driving && forward) {
-      float scale = (smoothedDistance - 5.0) / 25.0;
-      scale = constrain(scale, 0, 1);
-      DRIVE_SPEED = MIN_SPEED + scale * (MAX_SPEED - MIN_SPEED);
+    if (driving && forward) {
+      if (smoothedDistance > 0 && smoothedDistance <= 5.0 && !clamped) {
+        if (DEBUG) {
+          Serial.print("Object close! Smoothed: ");
+          Serial.println(smoothedDistance);
+        }
+        stopMotors();
+        delay(300);  // small pause for stability
+        clamp();
+      } else if (smoothedDistance > 45.0) {
+        DRIVE_SPEED = DRIVE_SPEED_MAX;
+      } else if (smoothedDistance <= 40.0 && smoothedDistance > 15.0) {
+        DRIVE_SPEED = DRIVE_SPEED_MID;
+      } else if (smoothedDistance <= 15.0 && smoothedDistance > 5.0) {
+        DRIVE_SPEED = DRIVE_SPEED_MIN;
+      } else {
+        DRIVE_SPEED = DRIVE_SPEED_MAX; // fallback if distance is outside all ranges
+      }
     } else {
-      DRIVE_SPEED = MAX_SPEED;
+      DRIVE_SPEED = DRIVE_SPEED_MAX; // if not driving forward, keep default
     }
 
   } else {
@@ -104,14 +127,7 @@ void loop() {
     if (DEBUG) Serial.println("Invalid distance (-1)");
   }
 
-  if (smoothedDistance > 0 && smoothedDistance <= 5.0 && !clamped) {
-    if (DEBUG) {
-      Serial.print("Object close! Smoothed: ");
-      Serial.println(smoothedDistance);
-    }
-    delay(300);  // small pause for stability
-    clamp();
-  }
+  
 
   if (millis() - lastCommandTime > COMMAND_TIMEOUT) {
     driving = false;
@@ -139,6 +155,7 @@ void handleCommand(char cmd) {
       turningInPlace = true;
       turnLeftInPlace = false;
       turnRightInPlace = true;
+      turnStartTime= millis();
       break;
 
     case 'D':
@@ -146,6 +163,7 @@ void handleCommand(char cmd) {
       turningInPlace = true;
       turnRightInPlace = false;
       turnLeftInPlace = true;
+      turnStartTime= millis();
       break;
 
     case 'X':
@@ -170,7 +188,7 @@ void handleCommand(char cmd) {
 
 void applyDrive() {
   int speed = DRIVE_SPEED;
-  speed = constrain(speed, MIN_SPEED, MAX_SPEED);
+  speed = constrain(speed, DRIVE_SPEED_MIN, DRIVE_SPEED_MAX);
   if (DEBUG) {
     Serial.print("Drive Speed: ");
     Serial.println(speed);
@@ -195,7 +213,7 @@ void applyDrive() {
 }
 
 void applyInPlaceTurn() {
-  int speed = TURN_SPEED;
+  int speed = TURN_SPEED1;
 
   motor1.setSpeed(speed);
   motor2.setSpeed(speed);
@@ -207,11 +225,22 @@ void applyInPlaceTurn() {
     motor2.run(BACKWARD);
     motor3.run(FORWARD);
     motor4.run(FORWARD);
+    //delay(200);
+    //stopMotors();
   } else if (turnRightInPlace) {
     motor1.run(FORWARD);
     motor2.run(FORWARD);
     motor3.run(BACKWARD);
     motor4.run(BACKWARD);
+    //delay(200);
+    //stopMotors();
+  }
+
+  if (millis() - turnStartTime >= turnDuration) {
+    turningInPlace = false;
+    turnLeftInPlace = false;
+    turnRightInPlace = false;
+    stopMotors();
   }
 }
 
