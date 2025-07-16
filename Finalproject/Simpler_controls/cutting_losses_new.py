@@ -2,67 +2,62 @@ import socket
 import serial
 import time
 
-# === Local UDP === needed to take this approach to enable auto multi-threading by the pu
-
-UDP_IP = "0.0.0.0"
+# === CONFIG ===
+SERIAL_PORT = '/dev/ttyACM0'
+SERIAL_BAUD = 115200
+# Local
+UDP_IP = "127.0.0.1"
 UDP_PORT = 9999
+
+SERIAL_TIMEOUT = 0.05
 
 sock = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
 sock.bind((UDP_IP, UDP_PORT))
+sock.settimeout(0.05)
 
-print(f"Listening for local UDP on {UDP_IP}:{UDP_PORT}")
+ser = serial.Serial(SERIAL_PORT, SERIAL_BAUD, timeout=SERIAL_TIMEOUT)
+time.sleep(2)
+print("[CONTROL] Serial connected.")
 
-# === Serial ===
-ser = serial.Serial('/dev/ttyACM0', 115200, timeout=0.1)
-print("Serial connected.")
-
-cmd ='X' #default command to stop the robot
+clamped = False
+last_cmd = 'X'
 
 trig_object = True  # Flag to indicate if object detction in progress
 trig_human = False  # Flag to indicate if human detection in progress
 
-# === Main loop ===
-
 while trig_object:
-    # === 1) Check Arduino ===
-    if ser.in_waiting:
-        line = ser.readline().decode().strip()
-        print(f"Arduino says: {line}")
-        if "Clamped" in line:
-            print("Clamp done")
-            cmd = 'X'
-            ser.write((cmd + '\n').encode())
-            print(f"Sent: {cmd}")
-            time.sleep(3)
-            trig_object = False
-            trig_human = True
+    while ser.in_waiting:
+        line = ser.readline().decode(errors='ignore').strip()
+        if line:
+            print(f"[SERIAL] {line}")
+            if "Clamped" in line:
+                last_cmd = 'X'
+                ser.write((last_cmd + '\n').encode())
+                clamped = True
 
-    sock.settimeout(0.1)
     try:
         data, addr = sock.recvfrom(1024)
         message = data.decode().strip()
-        print(f"Got local UDP: {message}")
+        print(f"[CONTROL] Camera: {message}")
 
         offset_str, width_str, height_str = message.split(',')
         offset = int(offset_str)
-        width = int(width_str)
-        height = int(height_str)
 
-        # Decide command if not already clamped (KINDA)
-        if offset > 20:
-            cmd = 'D'
-        elif offset < -20:
-            cmd = 'A'
-        elif cmd!= 'X':
-            cmd = 'W'
+        if clamped:
+            last_cmd = 'X'
+            trig_object = False
+            trig_human = True
+        elif offset > 30:
+            last_cmd = 'D'
+        elif offset < -30:
+            last_cmd = 'A'
         else:
-            cmd = 'A'    
+            last_cmd = 'W'
 
-        ser.write((cmd + '\n').encode())
-        print(f"Sent: {cmd}")
+        ser.write((last_cmd + '\n').encode())
+        print(f"[SEND] Sent: {last_cmd}")
 
     except socket.timeout:
         pass
 
-    time.sleep(0.05)
-#will add fucntionality of what happens when a human is detected later
+    time.sleep(0.001) #prevent busy waiting
