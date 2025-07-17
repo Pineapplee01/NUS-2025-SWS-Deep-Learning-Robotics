@@ -8,6 +8,7 @@
   Autoclamp is handled by arduino and clamps when the object is within the range of the claw
   The camera needs to ping and send details once every 30 frames only, otherwise the hardware gets overwhelmed with the barrage of commands and we make no progress.
 
+  These values have given the best performance till now. The drive and detection is smooth, even if the steps are slow.
   ======================= The PID needs to be tuned more before it's usable, it's speed corrections are horrendous rn =======================
 */
 #include <AFMotor.h>
@@ -23,12 +24,12 @@ Servo cameraServo;
 int cameraAngle = 0;
 
 // === Motors ===
-int DRIVE_SPEED_MAX = 170;
-int DRIVE_SPEED_MID = 150;
-int DRIVE_SPEED_MIN = 100;
+int DRIVE_SPEED_MAX = 200;
+int DRIVE_SPEED_MID = 155;
+int DRIVE_SPEED_MIN = 120;
 int DRIVE_SPEED = DRIVE_SPEED_MAX;
 const int MAX_SPEED = 230;
-int TURN_SPEED1 = 124;
+int TURN_SPEED1 = 150;
 int TURN_SPEED0 = 118;
 
 // === A timeout for turning ===
@@ -54,7 +55,7 @@ bool turnLeftInPlace = false;
 bool turnRightInPlace = false;
 
 unsigned long lastCommandTime = 0;
-const unsigned long COMMAND_TIMEOUT = 500;  // ms
+const unsigned long COMMAND_TIMEOUT = 300;  // ms
 
 // === Smoothed distance ===
 float smoothedDistance = -1;
@@ -107,7 +108,7 @@ void loop() {
           Serial.println(smoothedDistance);
         }
         stopMotors();
-        delay(300);  // small pause for stability
+        //delay(300);  // small pause for stability
         clamp();
       } else if (smoothedDistance > 45.0) {
         DRIVE_SPEED = DRIVE_SPEED_MAX;
@@ -270,7 +271,7 @@ void clamp() {
 }
 
 void unclamp() {
-  cameraServo.write(170);
+  cameraServo.write(180);
   clamped = false;
   Serial.println("Unclamped");
 }
