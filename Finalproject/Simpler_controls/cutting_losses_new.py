@@ -10,6 +10,10 @@ box_height: height of the detected object's boundary box in pixels (useful to ca
 
 Used UDP instead of TCP here because the last time, the camera latency was abysmal
 This gives the best performance till now, will add more later.
+
+Now the robot operates in phases (state machines, yay! ToC is helpful)
+It first searches for a target object, then turns around till it detects its next destination (here 'milo', expected 'human') to receive
+the delivery
 '''
 
 import socket
@@ -31,13 +35,20 @@ ser = serial.Serial(SERIAL_PORT, SERIAL_BAUD, timeout=SERIAL_TIMEOUT)
 time.sleep(2)
 print("[CONTROL] Serial connected.")
 
+# === STATE FLAGS ===
 clamped = False
+delivered = False
 last_cmd = 'X'
 
-searching = True     # scanning for object
-approaching = False  # approaching object when found
+searching = True     # looking for object
+approaching = False  # approaching object
+delivering = False   # looking for human after grabbing
 
-while searching or approaching:
+trig_object = False
+trig_human = False
+
+# === MAIN LOOP ===
+while True:
     # === Check Arduino ===
     while ser.in_waiting:
         line = ser.readline().decode(errors='ignore').strip()
@@ -47,9 +58,17 @@ while searching or approaching:
                 clamped = True
                 last_cmd = 'X'
                 ser.write((last_cmd + '\n').encode())
+                print("[CONTROL] Clamped. Now search for human.")
+                delivering = True
                 searching = False
                 approaching = False
-                print("[CONTROL] Clamped, stopping everything.")
+
+            elif "Delivered" in line:
+                delivered = True
+                last_cmd = 'X'
+                ser.write((last_cmd + '\n').encode())
+                print("[CONTROL] Delivered to human. All done.")
+                break
 
     # === Check Camera ===
     try:
@@ -63,38 +82,61 @@ while searching or approaching:
         box_height = int(height_str)
         object_type = object_str.strip()
 
-        # Decide if object is detected
         object_detected = (box_width > 40 or box_height > 40)
+        trig_object = (object_type == "cup") and object_detected
+        trig_human = (object_type == "milo") and object_detected
 
-        if clamped:
+        if clamped and not delivering:
             last_cmd = 'X'
 
         elif searching:
-            if object_detected:
+            if trig_object:
                 print("[CONTROL] Object detected! Switching to approach mode.")
                 searching = False
                 approaching = True
 
-                # Use normal correction immediately
                 if offset > 25:
                     last_cmd = 'D'
                 elif offset < -25:
                     last_cmd = 'A'
                 else:
                     last_cmd = 'W'
-
             else:
-                # Object NOT detected → keep turning left slowly : doesn't work :(
-                last_cmd = 'A'
+                last_cmd = 'A'  # rotate left if nothing found
 
         elif approaching:
-            # Object in sight → correct and move forward
-            if offset > 25:
-                last_cmd = 'D'
-            elif offset < -25:
-                last_cmd = 'A'
+            if trig_object:
+                if offset > 25:
+                    last_cmd = 'D'
+                elif offset < -25:
+                    last_cmd = 'A'
+                else:
+                    last_cmd = 'W'
             else:
-                last_cmd = 'W'
+                print("[CONTROL] Lost object, resuming search.")
+                approaching = False
+                searching = True
+                last_cmd = 'A'
+
+        elif delivering:
+            if trig_human:
+                print("[CONTROL] Milo detected! Approaching to deliver.")
+                if offset > 25:
+                    last_cmd = 'D'
+                elif offset < -25:
+                    last_cmd = 'A'
+                else:
+                    last_cmd = 'W'
+                    if box_width > 40 and box_height > 115:
+                        print("[CONTROL] Delivered to milo.") #placeholder for human
+                        delivered = True
+                        last_cmd = 'N' #unclamp
+                        ser.write((last_cmd + '\n').encode())
+                        last_cmd = 'X'  # stop after delivery
+                        ser.write((last_cmd + '\n').encode())
+                        delivering = False
+            else:
+                last_cmd = 'A'  # rotate to find 'human'
 
         ser.write((last_cmd + '\n').encode())
         print(f"[SEND] Sent: {last_cmd}")
@@ -102,4 +144,4 @@ while searching or approaching:
     except socket.timeout:
         pass
 
-    time.sleep(0.001) #prevent busy waiting
+    time.sleep(0.001)
